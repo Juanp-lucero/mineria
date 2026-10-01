@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: lab
+    description: Análisis reproducible de los ejercicios de minería de datos
 paths:
   /healthz:
     get:
@@ -24,6 +26,58 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /lab/overview:
+    get:
+      operationId: getLabOverview
+      tags: [lab]
+      summary: Resumen de los tres ejercicios y sus modelos
+      responses:
+        "200":
+          description: Métricas comparables y estado de limpieza de los conjuntos
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LabOverview"
+  /lab/exercises/{exerciseId}:
+    get:
+      operationId: getExerciseAnalysis
+      tags: [lab]
+      summary: Resultados detallados, calidad de datos, coeficientes y puntos para gráficos
+      parameters:
+        - name: exerciseId
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/ExerciseId"
+      responses:
+        "200":
+          description: Análisis detallado del ejercicio
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExerciseAnalysis"
+        "404":
+          description: Ejercicio desconocido
+  /lab/predict:
+    post:
+      operationId: predictExercise
+      tags: [lab]
+      summary: Predice el valor objetivo usando el modelo entrenado del ejercicio
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PredictionInput"
+      responses:
+        "200":
+          description: Predicción generada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PredictionResult"
+        "400":
+          description: Valores de entrada inválidos
 components:
   schemas:
     HealthStatus:
@@ -33,4 +87,258 @@ components:
           type: string
       required:
         - status
+    ExerciseId:
+      type: string
+      enum: [dolar, glucosa, energia]
+    ExerciseSummary:
+      type: object
+      properties:
+        id:
+          $ref: "#/components/schemas/ExerciseId"
+        title:
+          type: string
+        targetLabel:
+          type: string
+        targetUnit:
+          type: string
+        rows:
+          type: integer
+        r2:
+          type: number
+        primaryMetricLabel:
+          type: string
+        primaryMetricValue:
+          type: number
+        invalidRows:
+          type: integer
+        duplicateRows:
+          type: integer
+        flaggedOutlierRows:
+          type: integer
+        strongestFeature:
+          type: string
+      required:
+        - id
+        - title
+        - targetLabel
+        - targetUnit
+        - rows
+        - r2
+        - primaryMetricLabel
+        - primaryMetricValue
+        - invalidRows
+        - duplicateRows
+        - flaggedOutlierRows
+        - strongestFeature
+    LabOverview:
+      type: object
+      properties:
+        exerciseCount:
+          type: integer
+        totalRows:
+          type: integer
+        meanR2:
+          type: number
+        exercises:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExerciseSummary"
+      required: [exerciseCount, totalRows, meanR2, exercises]
+    CleaningReport:
+      type: object
+      properties:
+        inputRows:
+          type: integer
+        retainedRows:
+          type: integer
+        invalidRows:
+          type: integer
+        duplicateRows:
+          type: integer
+        missingValues:
+          type: integer
+        imputedValues:
+          type: integer
+        flaggedOutlierRows:
+          type: integer
+        flaggedOutlierValues:
+          type: integer
+        methods:
+          type: array
+          items:
+            type: string
+      required:
+        - inputRows
+        - retainedRows
+        - invalidRows
+        - duplicateRows
+        - missingValues
+        - imputedValues
+        - flaggedOutlierRows
+        - flaggedOutlierValues
+        - methods
+    ModelMetrics:
+      type: object
+      properties:
+        mse:
+          type: number
+        rmse:
+          type: number
+        r2:
+          type: number
+        trainRows:
+          type: integer
+        testRows:
+          type: integer
+        testShare:
+          type: number
+      required: [mse, rmse, r2, trainRows, testRows, testShare]
+    FeatureDefinition:
+      type: object
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        unit:
+          type: string
+        min:
+          type: number
+        max:
+          type: number
+        mean:
+          type: number
+        standardizedImpact:
+          type: number
+        rank:
+          type: integer
+      required: [key, label, unit, min, max, mean, standardizedImpact, rank]
+    ModelCoefficient:
+      type: object
+      properties:
+        term:
+          type: string
+        featureKey:
+          type: string
+        coefficient:
+          type: number
+        standardizedImpact:
+          type: number
+        direction:
+          type: string
+          enum: [positive, negative, neutral]
+        explanation:
+          type: string
+      required: [term, featureKey, coefficient, standardizedImpact, direction, explanation]
+    ScatterPoint:
+      type: object
+      properties:
+        x:
+          type: number
+        y:
+          type: number
+      required: [x, y]
+    ScatterSeries:
+      type: object
+      properties:
+        featureKey:
+          type: string
+        label:
+          type: string
+        unit:
+          type: string
+        points:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScatterPoint"
+      required: [featureKey, label, unit, points]
+    CleanedRecord:
+      type: object
+      properties:
+        values:
+          type: array
+          minItems: 3
+          maxItems: 3
+          items:
+            type: number
+        target:
+          type: number
+      required: [values, target]
+    ExerciseAnalysis:
+      type: object
+      properties:
+        id:
+          $ref: "#/components/schemas/ExerciseId"
+        title:
+          type: string
+        description:
+          type: string
+        targetLabel:
+          type: string
+        targetUnit:
+          type: string
+        primaryMetricLabel:
+          type: string
+        cleaning:
+          $ref: "#/components/schemas/CleaningReport"
+        metrics:
+          $ref: "#/components/schemas/ModelMetrics"
+        features:
+          type: array
+          items:
+            $ref: "#/components/schemas/FeatureDefinition"
+        coefficients:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModelCoefficient"
+        scatterSeries:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScatterSeries"
+        cleanedRows:
+          type: array
+          items:
+            $ref: "#/components/schemas/CleanedRecord"
+        strongestFeature:
+          type: string
+      required:
+        - id
+        - title
+        - description
+        - targetLabel
+        - targetUnit
+        - primaryMetricLabel
+        - cleaning
+        - metrics
+        - features
+        - coefficients
+        - scatterSeries
+        - cleanedRows
+        - strongestFeature
+    PredictionInput:
+      type: object
+      properties:
+        exerciseId:
+          $ref: "#/components/schemas/ExerciseId"
+        values:
+          type: array
+          minItems: 3
+          maxItems: 3
+          items:
+            type: number
+      required: [exerciseId, values]
+    PredictionResult:
+      type: object
+      properties:
+        exerciseId:
+          $ref: "#/components/schemas/ExerciseId"
+        targetLabel:
+          type: string
+        targetUnit:
+          type: string
+        predictedValue:
+          type: number
+        note:
+          type: string
+      required: [exerciseId, targetLabel, targetUnit, predictedValue, note]
 

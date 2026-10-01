@@ -1,0 +1,28 @@
+kind = "data-app"
+previewPath = "/"
+title = "Laboratorio de Minería de Datos"
+description = "Laboratorio interactivo para analizar los ejercicios de dólar, glucosa y energía del curso de minería de datos: limpia CSV, entrena modelos de regresión, explica resultados y permite probar predicciones."
+version = "1.0.0"
+id = "artifacts/mineria-datos"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 21990
+
+[services.development]
+run = "pnpm --filter @workspace/mineria-datos run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/mineria-datos", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/mineria-datos/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "21990"
+BASE_PATH = "/"
