@@ -166,7 +166,8 @@ const EXERCISES: ExerciseConfig[] = [
         label: "Hora",
         unit: "hora",
         aliases: ["Hora", "hour"],
-        valid: (value) => value >= 0 && value <= 24,
+        valid: (value) =>
+          Number.isInteger(value) && value >= 0 && value <= 24,
       },
       {
         key: "Dia_Semana",

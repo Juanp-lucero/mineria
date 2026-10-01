@@ -46,6 +46,9 @@ function Shell({ dark, toggleDark }: { dark: boolean; toggleDark: () => void }) 
   });
   const prediction = usePredictExercise();
   const qc = useQueryClient();
+  useEffect(() => {
+    prediction.reset();
+  }, [id, prediction.reset]);
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [interval, setInterval] = useState(300000);
   useEffect(() => {
@@ -204,6 +207,9 @@ function SummaryMetric({ label, value, detail, accent }: { label: string; value:
 }
 
 function ExerciseCard({ exercise, index }: { exercise: ExerciseSummary; index: number }) {
+  const metricUnit = exercise.primaryMetricLabel.startsWith('MSE')
+    ? `(${exercise.targetUnit})²`
+    : exercise.targetUnit;
   return <Link href={`/exercise/${exercise.id}`} className={`exercise-card card-${exercise.id}`} data-testid={`card-exercise-${exercise.id}`}>
     <div className="card-index">{String(index + 1).padStart(2, '0')} <span> / 03</span></div>
     <div className="card-main"><div className="card-kicker">{exercise.rows.toLocaleString('es-ES')} REGISTROS · OBJETIVO: {exercise.targetLabel.toUpperCase()}</div>
@@ -212,7 +218,7 @@ function ExerciseCard({ exercise, index }: { exercise: ExerciseSummary; index: n
     </div>
     <div className="card-stats">
       <span>R² DEL MODELO</span><strong>{nfmt(exercise.r2, 3)}</strong><div className="mini-meter"><i style={{ transform: `scaleX(${Math.max(0, Math.min(1, exercise.r2))})` }} /></div>
-      <small>{exercise.primaryMetricLabel}: {nfmt(exercise.primaryMetricValue)} {exercise.targetUnit}</small>
+       <small>{exercise.primaryMetricLabel}: {nfmt(exercise.primaryMetricValue)} {metricUnit}</small>
     </div>
     <span className="card-corner"><ArrowUpRight size={16} /></span>
   </Link>;
@@ -304,7 +310,7 @@ function ExercisePage({ id, analysis, loading, error, retry, prediction }: {
       })}
     </div>
     <div className="section-heading analysis-heading"><div><span className="section-index">05 — EXPERIMENTO</span><h2 className="font-display">Prueba una predicción</h2></div><span className="section-caption">INGRESA TRES VALORES, EN EL ORDEN MOSTRADO</span></div>
-    <PredictionForm analysis={data} mutation={prediction} />
+    <PredictionForm key={data.id} analysis={data} mutation={prediction} />
     <section className="cleaned-data-panel">
       <div className="panel-head"><div><span className="panel-kicker">DATOS PREPARADOS PARA EL MODELO</span><h3>Vista de registros limpios</h3></div><CSVLink data={rowsForDownload} filename={`${id}-datos-limpios.csv`} className="button-outline" data-testid={`download-cleaned-${id}`}><Download size={14} /> Descargar CSV limpio</CSVLink></div>
       {data.cleanedRows.length ? <div className="table-scroll"><table><thead><tr>{data.features.map((f) => <th key={f.key}>{f.label} <small>{f.unit}</small></th>)}<th>{data.targetLabel} <small>{data.targetUnit}</small></th></tr></thead><tbody>
@@ -321,7 +327,7 @@ function MetricCard({ title, value, note, visual }: { title: string; value: stri
 }
 
 function PredictionForm({ analysis, mutation }: { analysis: ExerciseAnalysis; mutation: ReturnType<typeof usePredictExercise> }) {
-  const [values, setValues] = useState(() => analysis.features.slice(0, 3).map((feature) => String(feature.mean)));
+  const [values, setValues] = useState(() => analysis.features.slice(0, 3).map((feature, index) => String(analysis.cleanedRows[0]?.values[index] ?? feature.mean)));
   const [formError, setFormError] = useState('');
   const result = mutation.data;
   const submit = (event: FormEvent<HTMLFormElement>) => {
@@ -331,19 +337,24 @@ function PredictionForm({ analysis, mutation }: { analysis: ExerciseAnalysis; mu
       setFormError('Completa los tres campos con valores numéricos válidos.');
       return;
     }
+    const integerFeatures = new Set(['Dia', 'Edad', 'Hora', 'Dia_Semana']);
+    if (analysis.features.some((feature, index) => integerFeatures.has(feature.key) && !Number.isInteger(parsed[index]))) {
+      setFormError('Día, edad y hora deben ser números enteros.');
+      return;
+    }
     setFormError('');
     mutation.mutate({ data: { exerciseId: analysis.id, values: parsed } });
   };
   return <div className="prediction-layout">
-    <form className="prediction-form" onSubmit={submit}>
+    <form className="prediction-form" onSubmit={submit} aria-busy={mutation.isPending}>
       <div className="prediction-form-head"><span className="panel-kicker">ENTRADA DEL MODELO</span><p>Usa valores dentro de los rangos observados para evitar extrapolar.</p></div>
       <div className="prediction-inputs">{analysis.features.slice(0, 3).map((feature, index) => <label key={feature.key} className="prediction-field">
         <span>{feature.label}<small>{feature.unit}</small></span>
-        <input type="number" step="any" value={values[index] ?? ''} min={feature.min} max={feature.max} onChange={(event) => setValues((current) => current.map((v, i) => i === index ? event.target.value : v))} data-testid={`input-predict-${feature.key}`} aria-label={feature.label} />
+        <input type="number" step={['Dia', 'Edad', 'Hora', 'Dia_Semana'].includes(feature.key) ? 1 : 'any'} value={values[index] ?? ''} min={feature.min} max={feature.max} onChange={(event) => { setValues((current) => current.map((v, i) => i === index ? event.target.value : v)); setFormError(''); mutation.reset(); }} data-testid={`input-predict-${feature.key}`} aria-label={feature.label} />
         <small className="range-hint">Rango: {nfmt(feature.min)} a {nfmt(feature.max)}</small>
       </label>)}</div>
       {formError && <p className="form-error" role="alert">{formError}</p>}
-      {!!mutation.error && <p className="form-error" role="alert">No se pudo calcular la predicción. Revisa la conexión e inténtalo otra vez.</p>}
+      {!!mutation.error && <p className="form-error" role="alert">{predictionErrorMessage(mutation.error)}</p>}
       <button className="predict-button" type="submit" disabled={mutation.isPending} data-testid="button-predict">
         {mutation.isPending ? <><RefreshCw size={15} className="spin" /> Calculando…</> : <>Calcular estimación <ArrowUpRight size={16} /></>}
       </button>
@@ -358,6 +369,17 @@ function PredictionForm({ analysis, mutation }: { analysis: ExerciseAnalysis; mu
       </> : <><div className="result-placeholder"><span className="result-symbol">ŷ</span><span>La estimación<br />aparecerá aquí</span></div><div className="result-hint">Completa las variables para explorar qué devuelve el modelo.</div></>}
     </div>
   </div>;
+}
+
+function predictionErrorMessage(error: unknown): string {
+  if (error && typeof error === 'object' && 'data' in error) {
+    const data = (error as { data?: unknown }).data;
+    if (data && typeof data === 'object' && 'error' in data) {
+      const message = (data as { error?: unknown }).error;
+      if (typeof message === 'string' && message.trim()) return message;
+    }
+  }
+  return 'No se pudo calcular la predicción. Revisa los valores e inténtalo otra vez.';
 }
 
 function PageLoading() {
